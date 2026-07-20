@@ -1,0 +1,119 @@
+'use client';
+
+import { lusitana } from '@/app/ui/fonts';
+import {
+  AtSymbolIcon,
+  KeyIcon,
+  ExclamationCircleIcon,
+} from '@heroicons/react/24/outline';
+import { ArrowRightIcon } from '@heroicons/react/20/solid';
+import { Button } from './button';
+import { useFormStatus } from 'react-dom';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+// Credentials dari placeholder-data.ts
+const MOCK_EMAIL = 'user@nextmail.com';
+const MOCK_PASSWORD = '123456';
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button
+      className="mt-4 w-full"
+      aria-disabled={pending}
+      type="submit"
+    >
+      {pending ? 'Logging in...' : 'Log in'}{' '}
+      <ArrowRightIcon className="ml-auto h-5 w-5 text-gray-50" />
+    </Button>
+  );
+}
+
+export default function LoginForm() {
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const router = useRouter();
+
+  function handleSubmit(formData: FormData) {
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
+    if (!email || !password) {
+      setErrorMessage('Mohon isi email dan password.');
+      return;
+    }
+
+    // Validasi dengan credentials dari placeholder-data
+    if (email === MOCK_EMAIL && password === MOCK_PASSWORD) {
+      setErrorMessage(null);
+      router.push('/dashboard');
+    } else {
+      setErrorMessage('Email atau password salah. Coba: user@nextmail.com / 123456');
+    }
+  }
+
+  return (
+    <form className="space-y-3" action={handleSubmit}>
+      <div className="flex-1 rounded-lg bg-gray-50 px-6 pb-4 pt-8">
+        <h1 className={`${lusitana.className} mb-3 text-2xl`}>
+          Please log in to continue.
+        </h1>
+        <div className="w-full">
+          <div>
+            <label
+              className="mb-3 mt-5 block text-xs font-medium text-gray-900"
+              htmlFor="email"
+            >
+              Email
+            </label>
+            <div className="relative">
+              <input
+                className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+                id="email"
+                type="email"
+                name="email"
+                placeholder="Enter your email address"
+                defaultValue="user@nextmail.com"
+                required
+              />
+              <AtSymbolIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <label
+              className="mb-3 mt-5 block text-xs font-medium text-gray-900"
+              htmlFor="password"
+            >
+              Password
+            </label>
+            <div className="relative">
+              <input
+                className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+                id="password"
+                type="password"
+                name="password"
+                placeholder="Enter password"
+                required
+                minLength={6}
+              />
+              <KeyIcon className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-gray-500 peer-focus:text-gray-900" />
+            </div>
+          </div>
+        </div>
+        <SubmitButton />
+        <div
+          className="flex min-h-[32px] items-end space-x-1 pt-1"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {errorMessage && (
+            <>
+              <ExclamationCircleIcon className="h-5 w-5 shrink-0 text-red-500" />
+              <p className="text-sm text-red-500">{errorMessage}</p>
+            </>
+          )}
+        </div>
+      </div>
+    </form>
+  );
+}
