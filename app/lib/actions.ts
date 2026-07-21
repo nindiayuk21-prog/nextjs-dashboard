@@ -4,12 +4,33 @@ import { z } from 'zod';
 import postgres from 'postgres';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { getInvoices, saveInvoices, getCustomers, saveCustomers } from './db-mock';
+import { signIn } from '@/auth';
+import { AuthError } from 'next-auth';
 
-const sql = process.env.POSTGRES_URL
-  ? postgres(process.env.POSTGRES_URL, { ssl: 'require' })
-  : null;
+// 1. Koneksi langsung ke Postgres (Wajib POSTGRES_URL di file .env)
+const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
+// 2. Server Action Autentikasi
+export async function authenticate(
+  prevState: string | undefined,
+  formData: FormData,
+) {
+  try {
+    await signIn('credentials', formData);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      switch (error.type) {
+        case 'CredentialsSignin':
+          return 'Invalid credentials.';
+        default:
+          return 'Something went wrong.';
+      }
+    }
+    throw error;
+  }
+}
+
+// 3. Schema Validasi Invoice
 const FormSchema = z.object({
   id: z.string(),
   customerId: z.string({
@@ -36,15 +57,14 @@ export type State = {
   message?: string | null;
 };
 
+// --- ACTION: CREATE INVOICE ---
 export async function createInvoice(prevState: State, formData: FormData) {
-  // Validate fields using Zod
   const validatedFields = CreateInvoice.safeParse({
     customerId: formData.get('customerId'),
     amount: formData.get('amount'),
     status: formData.get('status'),
   });
 
-  // If validation fails, return errors
   if (!validatedFields.success) {
     return {
       errors: validatedFields.error.flatten().fieldErrors,
@@ -56,35 +76,21 @@ export async function createInvoice(prevState: State, formData: FormData) {
   const amountInCents = amount * 100;
   const date = new Date().toISOString().split('T')[0];
 
-  if (!sql) {
-    console.warn('Database not configured. Saving invoice to persistent JSON file.');
-    const invoices = getInvoices();
-    invoices.unshift({
-      id: Date.now().toString(),
-      customer_id: customerId,
-      amount: amountInCents,
-      status: status as 'pending' | 'paid',
-      date,
-    });
-    saveInvoices(invoices);
-  } else {
-    try {
-      await sql`
-        INSERT INTO invoices (customer_id, amount, status, date)
-        VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
-      `;
-    } catch (error) {
-      console.error('Database Error:', error);
-      return {
-        message: 'Database Error: Failed to Create Invoice.',
-      };
-    }
+  try {
+    await sql`
+      INSERT INTO invoices (customer_id, amount, status, date)
+      VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
+    `;
+  } catch (error) {
+    console.error('Database Error:', error);
+    return { message: 'Database Error: Failed to Create Invoice.' };
   }
 
   revalidatePath('/dashboard/invoices');
   redirect('/dashboard/invoices');
 }
 
+// --- ACTION: UPDATE INVOICE ---
 export async function updateInvoice(id: string, prevState: State, formData: FormData) {
   const validatedFields = UpdateInvoice.safeParse({
     customerId: formData.get('customerId'),
@@ -102,53 +108,34 @@ export async function updateInvoice(id: string, prevState: State, formData: Form
   const { customerId, amount, status } = validatedFields.data;
   const amountInCents = amount * 100;
 
-  if (!sql) {
-    console.warn('Database not configured. Updating invoice in persistent JSON file.');
-    const invoices = getInvoices();
-    const index = invoices.findIndex((inv) => inv.id === id);
-    if (index !== -1) {
-      invoices[index] = {
-        ...invoices[index],
-        customer_id: customerId,
-        amount: amountInCents,
-        status: status as 'pending' | 'paid',
-      };
-      saveInvoices(invoices);
-    }
-  } else {
-    try {
-      await sql`
-        UPDATE invoices
-        SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
-        WHERE id = ${id}
-      `;
-    } catch (error) {
-      console.error('Database Error:', error);
-      return { message: 'Database Error: Failed to Update Invoice.' };
-    }
+  try {
+    await sql`
+      UPDATE invoices
+      SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
+      WHERE id = ${id}
+    `;
+  } catch (error) {
+    console.error('Database Error:', error);
+    return { message: 'Database Error: Failed to Update Invoice.' };
   }
 
   revalidatePath('/dashboard/invoices');
   redirect('/dashboard/invoices');
 }
 
+// --- ACTION: DELETE INVOICE ---
 export async function deleteInvoice(id: string) {
-  if (!sql) {
-    console.warn('Database not configured. Deleting invoice from persistent JSON file.');
-    const invoices = getInvoices();
-    const filtered = invoices.filter((inv) => inv.id !== id);
-    saveInvoices(filtered);
-  } else {
-    try {
-      await sql`DELETE FROM invoices WHERE id = ${id}`;
-    } catch (error) {
-      console.error('Database Error:', error);
-      throw new Error('Database Error: Failed to Delete Invoice.');
-    }
+  try {
+    await sql`DELETE FROM invoices WHERE id = ${id}`;
+  } catch (error) {
+    console.error('Database Error:', error);
+    throw new Error('Database Error: Failed to Delete Invoice.');
   }
+
   revalidatePath('/dashboard/invoices');
 }
 
+// 4. Schema Validasi Customer
 const CustomerFormSchema = z.object({
   id: z.string(),
   name: z.string().min(1, { message: 'Please enter a name.' }),
@@ -168,6 +155,7 @@ export type CustomerState = {
   message?: string | null;
 };
 
+// --- ACTION: CREATE CUSTOMER ---
 export async function createCustomer(prevState: CustomerState, formData: FormData) {
   const validatedFields = CreateCustomer.safeParse({
     name: formData.get('name'),
@@ -184,34 +172,21 @@ export async function createCustomer(prevState: CustomerState, formData: FormDat
 
   const { name, email, imageUrl } = validatedFields.data;
 
-  if (!sql) {
-    console.warn('Database not configured. Saving customer to persistent JSON file.');
-    const customers = getCustomers();
-    customers.unshift({
-      id: Date.now().toString(),
-      name,
-      email,
-      image_url: imageUrl || '/customers/evil-rabbit.png',
-    });
-    saveCustomers(customers);
-  } else {
-    try {
-      await sql`
-        INSERT INTO customers (name, email, image_url)
-        VALUES (${name}, ${email}, ${imageUrl || '/customers/evil-rabbit.png'})
-      `;
-    } catch (error) {
-      console.error('Database Error:', error);
-      return {
-        message: 'Database Error: Failed to Create Customer.',
-      };
-    }
+  try {
+    await sql`
+      INSERT INTO customers (name, email, image_url)
+      VALUES (${name}, ${email}, ${imageUrl || '/customers/evil-rabbit.png'})
+    `;
+  } catch (error) {
+    console.error('Database Error:', error);
+    return { message: 'Database Error: Failed to Create Customer.' };
   }
 
   revalidatePath('/dashboard/customers');
   redirect('/dashboard/customers');
 }
 
+// --- ACTION: UPDATE CUSTOMER ---
 export async function updateCustomer(id: string, prevState: CustomerState, formData: FormData) {
   const validatedFields = UpdateCustomer.safeParse({
     name: formData.get('name'),
@@ -228,55 +203,30 @@ export async function updateCustomer(id: string, prevState: CustomerState, formD
 
   const { name, email, imageUrl } = validatedFields.data;
 
-  if (!sql) {
-    console.warn('Database not configured. Updating customer in persistent JSON file.');
-    const customers = getCustomers();
-    const index = customers.findIndex((c) => c.id === id);
-    if (index !== -1) {
-      customers[index] = {
-        ...customers[index],
-        name,
-        email,
-        image_url: imageUrl || customers[index].image_url,
-      };
-      saveCustomers(customers);
-    }
-  } else {
-    try {
-      await sql`
-        UPDATE customers
-        SET name = ${name}, email = ${email}, image_url = ${imageUrl || '/customers/evil-rabbit.png'}
-        WHERE id = ${id}
-      `;
-    } catch (error) {
-      console.error('Database Error:', error);
-      return { message: 'Database Error: Failed to Update Customer.' };
-    }
+  try {
+    await sql`
+      UPDATE customers
+      SET name = ${name}, email = ${email}, image_url = ${imageUrl || '/customers/evil-rabbit.png'}
+      WHERE id = ${id}
+    `;
+  } catch (error) {
+    console.error('Database Error:', error);
+    return { message: 'Database Error: Failed to Update Customer.' };
   }
 
   revalidatePath('/dashboard/customers');
   redirect('/dashboard/customers');
 }
 
+// --- ACTION: DELETE CUSTOMER ---
 export async function deleteCustomer(id: string) {
-  if (!sql) {
-    console.warn('Database not configured. Deleting customer from persistent JSON file.');
-    const customers = getCustomers();
-    const filtered = customers.filter((c) => c.id !== id);
-    saveCustomers(filtered);
-    
-    // Also delete any invoices belonging to this customer to maintain integrity
-    const invoices = getInvoices();
-    const filteredInvoices = invoices.filter((inv) => inv.customer_id !== id);
-    saveInvoices(filteredInvoices);
-  } else {
-    try {
-      await sql`DELETE FROM customers WHERE id = ${id}`;
-    } catch (error) {
-      console.error('Database Error:', error);
-      throw new Error('Database Error: Failed to Delete Customer.');
-    }
+  try {
+    await sql`DELETE FROM customers WHERE id = ${id}`;
+  } catch (error) {
+    console.error('Database Error:', error);
+    throw new Error('Database Error: Failed to Delete Customer.');
   }
+
   revalidatePath('/dashboard/customers');
   revalidatePath('/dashboard/invoices');
 }

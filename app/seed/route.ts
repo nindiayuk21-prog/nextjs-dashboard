@@ -101,7 +101,20 @@ async function seedRevenue() {
   return insertedRevenue;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Disallow unauthenticated public database re-seeding in production unless SEED_SECRET matches
+  const authHeader = request.headers.get('authorization');
+  const secretKey = process.env.SEED_SECRET;
+  
+  if (process.env.NODE_ENV === 'production') {
+    if (!secretKey || authHeader !== `Bearer ${secretKey}`) {
+      return Response.json(
+        { error: 'Forbidden. Database seeding is restricted in production.' },
+        { status: 403 },
+      );
+    }
+  }
+
   if (!process.env.POSTGRES_URL) {
     return Response.json(
       { message: 'POSTGRES_URL is not configured. Seeding skipped.' },
@@ -110,7 +123,7 @@ export async function GET() {
   }
 
   try {
-    const result = await sql.begin((sql) => [
+    await sql.begin((sql) => [
       seedUsers(),
       seedCustomers(),
       seedInvoices(),
@@ -119,6 +132,7 @@ export async function GET() {
 
     return Response.json({ message: 'Database seeded successfully' });
   } catch (error) {
-    return Response.json({ error }, { status: 500 });
+    return Response.json({ error: String(error) }, { status: 500 });
   }
 }
+

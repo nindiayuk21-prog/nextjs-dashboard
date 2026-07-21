@@ -9,12 +9,8 @@ import {
 import { ArrowRightIcon } from '@heroicons/react/20/solid';
 import { Button } from './button';
 import { useFormStatus } from 'react-dom';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-
-// Credentials dari placeholder-data.ts
-const MOCK_EMAIL = 'user@nextmail.com';
-const MOCK_PASSWORD = '123456';
+import { useActionState } from 'react';
+import { authenticate } from '@/app/lib/actions';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -31,29 +27,13 @@ function SubmitButton() {
 }
 
 export default function LoginForm() {
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const router = useRouter();
-
-  function handleSubmit(formData: FormData) {
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-
-    if (!email || !password) {
-      setErrorMessage('Mohon isi email dan password.');
-      return;
-    }
-
-    // Validasi dengan credentials dari placeholder-data
-    if (email === MOCK_EMAIL && password === MOCK_PASSWORD) {
-      setErrorMessage(null);
-      router.push('/dashboard');
-    } else {
-      setErrorMessage('Email atau password salah. Coba: user@nextmail.com / 123456');
-    }
-  }
+  const [errorMessage, dispatch] = useActionState(
+    authenticate,
+    undefined,
+  );
 
   return (
-    <form className="space-y-3" action={handleSubmit}>
+    <form action={dispatch} className="space-y-3">
       <div className="flex-1 rounded-lg bg-gray-50 px-6 pb-4 pt-8">
         <h1 className={`${lusitana.className} mb-3 text-2xl`}>
           Please log in to continue.
@@ -117,3 +97,4 @@ export default function LoginForm() {
     </form>
   );
 }
+
