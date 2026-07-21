@@ -182,7 +182,11 @@ export async function createCustomer(prevState: CustomerState, formData: FormDat
     return { message: 'Database Error: Failed to Create Customer.' };
   }
 
+  // 🔴 PENAMBAHAN BARIS REVALIDATE
   revalidatePath('/dashboard/customers');
+  revalidatePath('/dashboard/invoices/create');
+  revalidatePath('/dashboard/invoices/[id]/edit', 'page');
+
   redirect('/dashboard/customers');
 }
 
